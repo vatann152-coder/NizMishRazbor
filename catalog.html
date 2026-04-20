@@ -8,13 +8,20 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/lightbox2/2.11.4/css/lightbox.min.css" rel="stylesheet">
     <style>
         body { font-family: Arial, sans-serif; background: #f8f9fa; }
-        .hero { background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url('https://images.unsplash.com/photo-1583121274602-f18f5b51f6e9?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80') center/cover; color: white; padding: 80px 0; }
+        .hero { 
+            background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), 
+                       url('https://images.unsplash.com/photo-1583121274602-f18f5b51f6e9?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80') center/cover; 
+            color: white; 
+            padding: 80px 0; 
+        }
         .card { transition: transform 0.2s; }
         .card:hover { transform: scale(1.05); }
         .price { font-size: 1.5rem; font-weight: bold; color: #28a745; }
         .spinner-border { width: 3rem; height: 3rem; }
         .cat-number { font-size: 0.9rem; color: #6c757d; }
         .badge-photos { position: absolute; top: 10px; right: 10px; z-index: 2; }
+        .hero h1 { margin-bottom: 0.5rem; }
+        .hero p { opacity: 0.9; font-size: 1.1rem; }
     </style>
 </head>
 <body>
@@ -22,7 +29,7 @@
     <section class="hero text-center">
         <div class="container">
             <h1 class="display-4 fw-bold">Каталог товаров</h1>
-            <p class="lead">Только статус=1. A=№, B=статус, C=название, D=номер, E=цена, F=фото, G=описание</p>
+            <p class="lead">A=№, B=статус, C=наименование, D=каталожный номер, E=цена, F=фото, G=шаблон фото, H=описание</p>
             <a href="index.html" class="btn btn-light me-3">Главная</a>
             <button class="btn btn-outline-light" onclick="loadProducts()">Обновить каталог</button>
         </div>
@@ -45,7 +52,7 @@
             <div id="products-grid" class="row g-4">
                 <div class="col-12 text-center">
                     <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Загрузка...</span>
+                        <span class="visually-hidden">Загрузка данных из Google Sheets...</span>
                     </div>
                 </div>
             </div>
@@ -55,69 +62,110 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lightbox2/2.11.4/js/lightbox.min.js"></script>
     <script>
-        const CSV_URL = https://docs.google.com/spreadsheets/d/e/2PACX-1vRqoUEksexahz9qmPIH4tnt7_pv0s0zuioF43jt9ftE264RW8MlRomCK8F-2GEz_w/pub?gid=549941518&single=true&output=csv; // <- Ваша CSV-ссылка из Google Sheets
+        // Вставьте вашу CSV-ссылку из Google Sheets (без лишних кавычек!)
+        const CSV_URL = https://docs.google.com/spreadsheets/d/e/2PACX-1vRqoUEksexahz9qmPIH4tnt7_pv0s0zuioF43jt9ftE264RW8MlRomCK8F-2GEz_w/pub?gid=549941518&single=true&output=csv;
+
         let allProducts = [];
 
-        // Парсинг под новую структуру: B=1 статус(0/1), C=2 название, D=3 номер, E=4 цена, F=5 фото, G=6 описание
+        // Парсинг CSV под вашу структуру:
+        // A=0 (нумерация), B=1 (статус), C=2 (наименование), D=3 (катал. номер),
+        // E=4 (цена), F=5 (фото, много строк через \n), G=6 (шаблон фото с *), H=7 (описание)
         function parseCSV(csvText) {
-            const rows = csvText.split('\n').map(row => row.split(',').map(cell => cell.trim().replace(/^"|"$/g, '').replace(/""/g, '"')));
-            return rows.slice(1) // Пропустить заголовки
-                .filter(row => row.length >= 7 && row[1] === '1') // Только статус B=1
-                .map(row => {
-                    const photosStr = row[5] || ''; // F=5
-                    const photos = photosStr.split('\n').map(p => p.trim()).filter(p => p);
-                    return {
-                        name: row[2] || 'Без названия',      // C=2
-                        catNumber: row[3] || '',            // D=3
-                        price: row[4] || 'Договорная',      // E=4
-                        photos: photos.length ? photos.map(photo => ({
-                            thumb: `https://disk.yandex.ru/i/${photo}?size=400x400`,
-                            orig: `https://disk.yandex.ru/d/${photo}`
-                        })) : [{thumb: 'https://via.placeholder.com/400x300?text=Нет+фото', orig: ''}],
-                        desc: row[6] || ''                  // G=6
-                    };
-                });
+            const rows = csvText.split('\n')
+                .map(line => line
+                    .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+                    .map(cell => cell.trim().replace(/^"|"$/g, '').replace(/""/g, '"'))
+                )
+                .filter(row => row.length >= 8 && row[0] && row[1] === '1'); // только B=1
+
+            return rows.map(row => {
+                const catalogNumber = row[3];      // D = каталожный номер
+                const price        = row[4];       // E = цена
+                const photosStr    = row[5];       // F = имена файлов, через \n
+                const photoTemplate = row[6];      // G = шаблон с *
+                const desc         = row[7];       // H = описание
+
+                // Если в шаблоне G есть *, заменяем его на номер D
+                const finalTemplate = photoTemplate ? photoTemplate.replace(/\*/g, catalogNumber) : 'photo_default.jpg';
+
+                // Формируем массив фото-имён, если есть много файлов через \n
+                const photoNames = photosStr
+                    ? photosStr.split('\n').map(name => name.trim()).filter(name => name)
+                    : [finalTemplate];
+
+                const photos = photoNames.map(photo => ({
+                    thumb: `https://disk.yandex.ru/i/${photo}?size=400x400`,
+                    orig:  `https://disk.yandex.ru/d/${photo}`
+                }));
+
+                return {
+                    name:       row[2] || 'Без названия',
+                    catNumber:  catalogNumber || '',
+                    price:      price || 'Договорная',
+                    photos:     photos,
+                    desc:       desc || ''
+                };
+            });
         }
 
         async function loadProducts() {
+            const grid = document.getElementById('products-grid');
+
             try {
                 const response = await fetch(CSV_URL);
-                if (!response.ok) throw new Error(`Ошибка ${response.status}: Проверьте Publish to web > CSV`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status} – проверьте ссылку и публикацию в Google Sheets`);
+                }
                 const csvText = await response.text();
+
                 allProducts = parseCSV(csvText);
                 renderProducts(allProducts);
                 document.getElementById('count').textContent = allProducts.length;
+
             } catch (error) {
-                console.error(error);
-                document.getElementById('products-grid').innerHTML = `
-                    <div class="col-12 alert alert-danger d-flex align-items-center">
-                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                        <div>
-                            <h5>Не удалось загрузить таблицу</h5>
-                            <p>1. File > Share > Publish to web > CSV > Publish<br>
-                               2. Скопируйте ссылку в CSV_URL<br>
-                               ${error.message}</p>
+                console.error('Ошибка при загрузке каталога:', error);
+                grid.innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-danger">
+                            <h5>Ошибка загрузки данных</h5>
+                            <p>
+                                1. Убедитесь, что в Google Sheets включена публикация: <b>Файл > Опубликовать в веб > CSV</b>.<br>
+                                2. Вставьте правильную ссылку в переменную <b>CSV_URL</b> без лишних кавычек.
+                            </p>
+                            <p><small>Ошибка: ${error.message}</small></p>
                         </div>
-                    </div>`;
+                    </div>
+                `;
             }
         }
 
         function renderProducts(products) {
             const grid = document.getElementById('products-grid');
-            grid.innerHTML = products.length ? '' : '<div class="col-12"><div class="alert alert-info text-center">Нет товаров со статусом 1</div></div>';
+            grid.innerHTML = products.length
+                ? ''
+                : '<div class="col-12"><div class="alert alert-info text-center">Нет товаров со статусом 1</div></div>';
 
-            products.forEach((product, index) => {
+            products.forEach((product, idx) => {
                 const firstPhoto = product.photos[0];
-                const col = document.createElement('div');
-                col.className = 'col-md-6 col-lg-4';
-                col.innerHTML = `
+                const card = document.createElement('div');
+                card.className = 'col-md-6 col-lg-4';
+                card.innerHTML = `
                     <div class="card h-100 shadow position-relative">
-                        <a href="${firstPhoto.orig}" data-lightbox="gal${index}" data-title="${product.name}<br>№${product.catNumber}<br>${product.desc}">
-                            <img src="${firstPhoto.thumb}" class="card-img-top" alt="${product.name}" loading="lazy" style="height:200px;object-fit:cover;">
+                        <a href="${firstPhoto.orig}"
+                           data-lightbox="gallery-${idx}"
+                           data-title="${product.name}<br>№ ${product.catNumber}<br>${product.desc}">
+                            <img src="${firstPhoto.thumb}"
+                                 class="card-img-top"
+                                 alt="${product.name}"
+                                 loading="lazy"
+                                 style="height:200px; object-fit:cover;">
                         </a>
-                        ${product.photos.length > 1 ? `<span class="badge badge-photos bg-primary">${product.photos.length} фото</span>` : ''}
+                        ${product.photos.length > 1
+                            ? `<span class="badge badge-photos bg-primary">${product.photos.length} фото</span>`
+                            : ''
+                        }
                         <div class="card-body d-flex flex-column">
-                            <h6 class="card-title">${product.name}</h6>
+                            <h6 class="card-title mb-0">${product.name}</h6>
                             <small class="cat-number mb-1">Кат. № ${product.catNumber}</small>
                             <div class="price mt-auto mb-2">${product.price} ₽</div>
                             <p class="card-text small flex-grow-1">${product.desc}</p>
@@ -125,13 +173,13 @@
                         </div>
                     </div>
                 `;
-                grid.appendChild(col);
+                grid.appendChild(card);
 
-                // Доп. фото для галереи
+                // Если есть доп. фото, добавляем их в lightbox (скрытые ссылки)
                 product.photos.slice(1).forEach(photo => {
                     const hiddenLink = document.createElement('a');
                     hiddenLink.href = photo.orig;
-                    hiddenLink.setAttribute('data-lightbox', `gal${index}`);
+                    hiddenLink.setAttribute('data-lightbox', `gallery-${idx}`);
                     hiddenLink.style.display = 'none';
                     document.body.appendChild(hiddenLink);
                 });
@@ -139,19 +187,40 @@
         }
 
         function filterProducts() {
-            const q = document.getElementById('search').value.toLowerCase();
-            const filtered = allProducts.filter(p => 
-                p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q) || p.catNumber.includes(q)
-            );
+            const query = document.getElementById('search').value.trim().toLowerCase();
+            if (!query) {
+                renderProducts(allProducts);
+                document.getElementById('count').textContent = allProducts.length;
+                return;
+            }
+
+            const filtered = allProducts.filter(p => {
+                const name = (p.name || '').toLowerCase();
+                const desc = (p.desc || '').toLowerCase();
+                const num  = p.catNumber || '';
+                return name.includes(query) || desc.includes(query) || num.includes(query);
+            });
+
             renderProducts(filtered);
             document.getElementById('count').textContent = filtered.length;
         }
 
-        // Поиск по Enter
+        // Инициализация при загрузке страницы
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('search').addEventListener('keyup', e => e.key === 'Enter' && filterProducts());
+            const input = document.getElementById('search');
+            input.addEventListener('keyup', e => {
+                if (e.key === 'Enter') filterProducts();
+            });
+
             if (CSV_URL === 'YOUR_CSV_URL_HERE') {
-                document.getElementById('products-grid').innerHTML = '<div class="col-12"><div class="alert alert-warning text-center h4">📝 Вставьте CSV_URL в код и обновите страницу!</div></div>';
+                document.getElementById('products-grid').innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-warning text-center">
+                            <h5>Не забудьте вставить CSV_URL!</h5>
+                            <p>Скопируйте <b>CSV-ссылку</b> из Google Sheets и вставьте в переменную <code>CSV_URL</code> в коде.</p>
+                        </div>
+                    </div>
+                `;
             } else {
                 loadProducts();
             }
