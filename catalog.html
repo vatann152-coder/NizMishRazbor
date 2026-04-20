@@ -12,6 +12,8 @@
         .card { transition: transform 0.2s; }
         .card:hover { transform: scale(1.05); }
         .price { font-size: 1.5rem; font-weight: bold; color: #28a745; }
+        .spinner-border { width: 3rem; height: 3rem; }
+        .cat-number { font-size: 0.9rem; color: #6c757d; }
     </style>
 </head>
 <body>
@@ -19,19 +21,28 @@
     <section class="hero text-center">
         <div class="container">
             <h1 class="display-4 fw-bold">Каталог товаров</h1>
-            <a href="index.html" class="btn btn-light">На главную</a>
+            <p class="lead">A=название, B=номер, C=цена, D=фото (много), E=описание</p>
+            <a href="index.html" class="btn btn-light me-3">На главную</a>
+            <button class="btn btn-outline-light" onclick="loadProducts()">Обновить</button>
         </div>
     </section>
 
     <!-- Каталог -->
-    <section id="catalog" class="py-5 bg-light">
+    <section class="py-5 bg-light">
         <div class="container">
-            <h2 class="text-center mb-5">Все б/у запчасти</h2>
+            <div class="row mb-3">
+                <div class="col">
+                    <div class="input-group">
+                        <input type="text" id="search" class="form-control" placeholder="Поиск по названию/описанию...">
+                        <button class="btn btn-outline-secondary" onclick="filterProducts()">Фильтр</button>
+                    </div>
+                </div>
+            </div>
+            <h2 class="text-center mb-5">Запчасти (<span id="count">0</span>)</h2>
             <div id="products-grid" class="row g-4">
-                <!-- Товары генерируются JS -->
                 <div class="col-12 text-center">
-                    <div class="spinner-border" role="status">
-                        <span class="visually-hidden">Загрузка...</span>
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка из Google Sheets...</span>
                     </div>
                 </div>
             </div>
@@ -41,52 +52,118 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lightbox2/2.11.4/js/lightbox.min.js"></script>
     <script>
-        const CSV_URL = 'YOUR_CSV_URL'; // <- Вставьте вашу CSV-ссылку из Google Sheets
+        const CSV_URL = 'YOUR_CSV_URL_HERE'; // Замените на вашу CSV-ссылку
+        let allProducts = [];
+
+        // Парсинг CSV под вашу структуру: A=0 название, B=1 номер, C=2 цена, D=3 фото (split \n), E=4 описание
+        function parseCSV(csvText) {
+            // Robust CSV parser для multi-line (D с \n)
+            const rows = csvText.split('\n');
+            const products = [];
+            let currentRow = [];
+
+            rows.forEach(line => {
+                if (line.trim()) {
+                    // Простой split, но учитываем " для multi-line
+                    const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(cell => 
+                        cell.trim().replace(/^"|"$/g, '').replace(/""/g, '"')
+                    );
+                    if (cols.length >= 5) {
+                        const photos = cols[3] ? cols[3].split('\n').map(p => p.trim()).filter(p => p) : [];
+                        products.push({
+                            name: cols[0] || 'Без названия',
+                            catNumber: cols[1] || '',
+                            price: cols[2] || 'Договорная', // C=2
+                            photos: photos.length ? photos.map(photo => ({
+                                thumb: `https://disk.yandex.ru/i/${photo}?size=400x400`,
+                                orig: `https://disk.yandex.ru/d/${photo}`
+                            })) : [{thumb: 'https://via.placeholder.com/400?text=Фото', orig: ''}],
+                            desc: cols[4] || '' // E=4
+                        });
+                    }
+                }
+            });
+            return products;
+        }
 
         async function loadProducts() {
             try {
                 const response = await fetch(CSV_URL);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const csvText = await response.text();
-                const rows = csvText.split('\n').map(row => row.split(',').map(cell => cell.trim().replace(/"/g, '')));
-                const headers = rows[0];
-                const products = rows.slice(1).filter(row => row[0]); // Пропуск пустых
-
-                const grid = document.getElementById('products-grid');
-                grid.innerHTML = ''; // Очистка
-
-                products.forEach(product => {
-                    const name = product[0] || 'Без названия';
-                    const desc = product[1] || '';
-                    const photoFile = product[3] || 'photo_default.jpg'; // Столбец D
-                    const price = product[4] || 'Договорная'; // Столбец E
-                    const thumbUrl = `https://disk.yandex.ru/i/${photoFile}?size=400`; // Thumb
-                    const origUrl = `https://disk.yandex.ru/d/${photoFile}`; // Оригинал
-
-                    const col = document.createElement('div');
-                    col.className = 'col-md-6 col-lg-4';
-                    col.innerHTML = `
-                        <div class="card h-100 shadow">
-                            <a href="${origUrl}" data-lightbox="gal" data-title="${name}. ${desc}<br>Цена: ${price} ₽">
-                                <img src="${thumbUrl}" class="card-img-top" alt="${name}">
-                            </a>
-                            <div class="card-body">
-                                <h5 class="card-title">${name}</h5>
-                                <p class="price">${price} ₽</p>
-                                <p class="card-text">${desc}</p>
-                                <a href="tel:+79001234567" class="btn btn-success w-100">Купить</a>
-                            </div>
-                        </div>
-                    `;
-                    grid.appendChild(col);
-                });
+                allProducts = parseCSV(csvText);
+                renderProducts(allProducts);
+                document.getElementById('count').textContent = allProducts.length;
             } catch (error) {
-                console.error('Ошибка загрузки:', error);
-                document.getElementById('products-grid').innerHTML = '<div class="col-12"><p class="alert alert-danger">Ошибка загрузки каталога. Проверьте CSV-ссылку.</p></div>';
+                console.error('Ошибка:', error);
+                document.getElementById('products-grid').innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-danger">
+                            <h4>Ошибка загрузки таблицы</h4>
+                            <p>Проверьте CSV_URL и Publish to web (CSV). ${error.message}</p>
+                        </div>
+                    </div>`;
             }
         }
 
-        // Загрузка при открытии страницы
-        window.onload = loadProducts;
+        function renderProducts(products) {
+            const grid = document.getElementById('products-grid');
+            grid.innerHTML = '';
+
+            products.forEach((product, index) => {
+                const firstPhoto = product.photos[0];
+                const col = document.createElement('div');
+                col.className = 'col-md-6 col-lg-4';
+                col.innerHTML = `
+                    <div class="card h-100 shadow">
+                        <a href="${firstPhoto.orig}" data-lightbox="gal${index}" data-title="${product.name} | ${product.catNumber}<br>${product.desc}">
+                            <img src="${firstPhoto.thumb}" class="card-img-top" alt="${product.name}" loading="lazy">
+                            ${product.photos.length > 1 ? `<span class="position-absolute top-0 end-0 badge bg-primary fs-6">${product.photos.length} фото</span>` : ''}
+                        </a>
+                        <div class="card-body d-flex flex-column">
+                            <h5 class="card-title">${product.name}</h5>
+                            <p class="cat-number mb-1">№ ${product.catNumber}</p>
+                            <p class="price mt-auto">${product.price} ₽</p>
+                            <p class="card-text flex-grow-1 small">${product.desc}</p>
+                            <a href="tel:+79001234567" class="btn btn-success mt-2">Купить</a>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(col);
+
+                // Галерея для доп. фото
+                product.photos.slice(1).forEach((photo, i) => {
+                    const extraImg = document.createElement('a');
+                    extraImg.href = photo.orig;
+                    extraImg.setAttribute('data-lightbox', `gal${index}`);
+                    extraImg.style.display = 'none';
+                    document.body.appendChild(extraImg);
+                });
+            });
+        }
+
+        function filterProducts() {
+            const query = document.getElementById('search').value.toLowerCase();
+            const filtered = allProducts.filter(p => 
+                p.name.toLowerCase().includes(query) || 
+                p.desc.toLowerCase().includes(query) ||
+                p.catNumber.includes(query)
+            );
+            renderProducts(filtered);
+            document.getElementById('count').textContent = filtered.length;
+        }
+
+        // Enter в поиске
+        document.getElementById('search').addEventListener('keypress', e => e.key === 'Enter' && filterProducts());
+
+        // Инициализация
+        window.onload = () => {
+            if (CSV_URL === 'YOUR_CSV_URL_HERE') {
+                document.getElementById('products-grid').innerHTML = '<div class="col-12 alert alert-warning text-center">🔧 Вставьте CSV_URL в &lt;script&gt; и сохраните!</div>';
+            } else {
+                loadProducts();
+            }
+        };
     </script>
 </body>
 </html>
