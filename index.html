@@ -89,29 +89,60 @@
                 }));
         }
 
-        async function loadProducts() {
-            const grid = document.getElementById('products-grid');
+      
 
-            try {
-                const response = await fetch(CSV_URL);
-                if (!response.ok) throw new Error('CSV недоступен');
-                const csvText = await response.text();
-                allProducts = parseCSV(csvText);
-                renderProducts(allProducts);
-                document.getElementById('count').textContent = allProducts.length;
 
-            } catch (error) {
-                console.error('Ошибка:', error);
-                grid.innerHTML = `
-                    <div class="col-12">
-                        <div class="alert alert-danger">
-                            <h4>Ошибка загрузки</h4>
-                            <p>Проверьте CSV-ссылку: ${CSV_URL}</p>
-                            <p><strong>Ошибка:</strong> ${error.message}</p>
-                        </div>
-                    </div>`;
-            }
+async function loadProducts() {
+    const grid = document.getElementById('products-grid');
+    const cacheKey = 'catalog_cache';
+    const cacheTimeKey = 'catalog_cache_time';
+
+    const now = Date.now();
+    const cacheTime = parseInt(localStorage.getItem(cacheTimeKey) || '0');
+    const cached = localStorage.getItem(cacheKey);
+
+    // Если кэш есть и не старше 5 минут (300_000 мс)
+    if (cached && now - cacheTime < 300_000) {
+        try {
+            allProducts = JSON.parse(cached);
+            renderProducts(allProducts);
+            document.getElementById('count').textContent = allProducts.length;
+            console.log('🔹 Каталог загружен из кэша');
+            return;
+        } catch (e) {
+            console.warn('Кэш повреждён, загружаем по сети');
         }
+    }
+
+    try {
+        const response = await fetch(CSV_URL);
+        if (!response.ok) throw new Error('CSV недоступен');
+        const csvText = await response.text();
+
+        allProducts = parseCSV(csvText);
+
+        // Сохраняем в кэш
+        localStorage.setItem(cacheKey, JSON.stringify(allProducts));
+        localStorage.setItem(cacheTimeKey, now.toString());
+
+        renderProducts(allProducts);
+        document.getElementById('count').textContent = allProducts.length;
+        console.log('✅ Каталог загружен из сети');
+
+    } catch (error) {
+        console.error('Ошибка:', error);
+        grid.innerHTML = `
+            <div class="col-12">
+                <div class="alert alert-danger">
+                    <h4>Ошибка загрузки</h4>
+                    <p>Проверьте CSV-ссылку: ${CSV_URL}</p>
+                    <p><strong>Ошибка:</strong> ${error.message}</p>
+                </div>
+            </div>`;
+    }
+}
+
+       
 
         function renderProducts(products) {
             const grid = document.getElementById('products-grid');
