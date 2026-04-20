@@ -25,11 +25,12 @@
     </style>
 </head>
 <body>
+
     <!-- Hero -->
     <section class="hero text-center">
         <div class="container">
             <h1 class="display-4 fw-bold">Каталог товаров</h1>
-            <p class="lead">A=№, B=статус, C=наименование, D=каталожный номер, E=цена, F=фото, G=шаблон фото, H=описание</p>
+            <p class="lead">Фото строятся по шаблону: G=фото*, F=число/номер; заменяем * на F</p>
             <a href="index.html" class="btn btn-light me-3">Главная</a>
             <button class="btn btn-outline-light" onclick="loadProducts()">Обновить каталог</button>
         </div>
@@ -62,14 +63,17 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lightbox2/2.11.4/js/lightbox.min.js"></script>
     <script>
-        // Вставьте вашу CSV-ссылку из Google Sheets (без лишних кавычек!)
+        // Вставь свою CSV-ссылку из Google Sheets (без лишних кавычек!)
         const CSV_URL = https://docs.google.com/spreadsheets/d/e/2PACX-1vRqoUEksexahz9qmPIH4tnt7_pv0s0zuioF43jt9ftE264RW8MlRomCK8F-2GEz_w/pub?gid=549941518&single=true&output=csv;
+
+        // Базовый путь до альбома на Яндекс Диске
+        const ALBUM_BASE = 'https://disk.yandex.ru/d/q0_ZAJvqRNUQ4Q/';
 
         let allProducts = [];
 
-        // Парсинг CSV под вашу структуру:
-        // A=0 (нумерация), B=1 (статус), C=2 (наименование), D=3 (катал. номер),
-        // E=4 (цена), F=5 (фото, много строк через \n), G=6 (шаблон фото с *), H=7 (описание)
+        // Парсинг CSV:
+        // A=0, B=1 (статус), C=2 (название), D=3 (каталожный номер),
+        // E=4 (цена), F=5 (значение вместо *), G=6 (шаблон вида "photo*_front.jpg"), H=7 (описание)
         function parseCSV(csvText) {
             const rows = csvText.split('\n')
                 .map(line => line
@@ -79,31 +83,48 @@
                 .filter(row => row.length >= 8 && row[0] && row[1] === '1'); // только B=1
 
             return rows.map(row => {
-                const catalogNumber = row[3];      // D = каталожный номер
-                const price        = row[4];       // E = цена
-                const photosStr    = row[5];       // F = имена файлов, через \n
-                const photoTemplate = row[6];      // G = шаблон с *
-                const desc         = row[7];       // H = описание
+                const name       = row[2] || 'Без названия';          // C
+                const catNumber  = row[3] || '';                       // D
+                const price      = row[4] || 'Договорная';            // E
+                const subst      = row[5] || '';                       // F — это то, что мы ставим вместо *
+                const photoTpl   = row[6] || 'photo_default.jpg';      // G — шаблон photo*_front.jpg
+                const desc       = row[7] || '';                       // H
 
-                // Если в шаблоне G есть *, заменяем его на номер D
-                const finalTemplate = photoTemplate ? photoTemplate.replace(/\*/g, catalogNumber) : 'photo_default.jpg';
+                // Формируем финальное имя файла: заменяем все * в G на F
+                const finalPhotoName = photoTpl.replace(/\*/g, subst);
 
-                // Формируем массив фото-имён, если есть много файлов через \n
-                const photoNames = photosStr
-                    ? photosStr.split('\n').map(name => name.trim()).filter(name => name)
-                    : [finalTemplate];
+                // Формируем фото-ссылки
+                const orig = `${ALBUM_BASE}${finalPhotoName}`;
+                const thumb = orig.replace('/d/', '/i/').replace('.jpg', '?size=400')
+                                  .replace('.png', '?size=400')
+                                  .replace('.jpeg', '?size=400');
 
-                const photos = photoNames.map(photo => ({
-                    thumb: `https://disk.yandex.ru/i/${photo}?size=400x400`,
-                    orig:  `https://disk.yandex.ru/d/${photo}`
-                }));
+                const photos = [{
+                    thumb,
+                    orig
+                }];
+
+                // Если в F через \n переданы несколько номеров, делаем несколько фото
+                if (subst.includes('\n')) {
+                    const parts = subst.split('\n').map(p => p.trim()).filter(p => p);
+                    photos.length = 0; // очищаем и формируем новые фото
+
+                    parts.forEach(part => {
+                        const file = photoTpl.replace(/\*/g, part);
+                        const o = `${ALBUM_BASE}${file}`;
+                        const t = o.replace('/d/', '/i/').replace(/\.jpg$/i, '?size=400')
+                                           .replace(/\.png$/i, '?size=400')
+                                           .replace(/\.jpeg$/i, '?size=400');
+                        photos.push({ thumb: t, orig: o });
+                    });
+                }
 
                 return {
-                    name:       row[2] || 'Без названия',
-                    catNumber:  catalogNumber || '',
-                    price:      price || 'Договорная',
-                    photos:     photos,
-                    desc:       desc || ''
+                    name,
+                    catNumber,
+                    price,
+                    photos,
+                    desc
                 };
             });
         }
@@ -129,8 +150,8 @@
                         <div class="alert alert-danger">
                             <h5>Ошибка загрузки данных</h5>
                             <p>
-                                1. Убедитесь, что в Google Sheets включена публикация: <b>Файл > Опубликовать в веб > CSV</b>.<br>
-                                2. Вставьте правильную ссылку в переменную <b>CSV_URL</b> без лишних кавычек.
+                                1. Убедитесь, что <b>CSV_URL</b> ведёт на публичную CSV‑экспорт‑ссылку Google Sheets.<br>
+                                2. Файл альбома на Яндекс Диске должен быть доступен по ссылке.
                             </p>
                             <p><small>Ошибка: ${error.message}</small></p>
                         </div>
@@ -147,6 +168,7 @@
 
             products.forEach((product, idx) => {
                 const firstPhoto = product.photos[0];
+
                 const card = document.createElement('div');
                 card.className = 'col-md-6 col-lg-4';
                 card.innerHTML = `
@@ -175,7 +197,7 @@
                 `;
                 grid.appendChild(card);
 
-                // Если есть доп. фото, добавляем их в lightbox (скрытые ссылки)
+                // Доп. фото для галереи
                 product.photos.slice(1).forEach(photo => {
                     const hiddenLink = document.createElement('a');
                     hiddenLink.href = photo.orig;
@@ -205,7 +227,7 @@
             document.getElementById('count').textContent = filtered.length;
         }
 
-        // Инициализация при загрузке страницы
+        // Инициализация
         document.addEventListener('DOMContentLoaded', () => {
             const input = document.getElementById('search');
             input.addEventListener('keyup', e => {
@@ -216,8 +238,8 @@
                 document.getElementById('products-grid').innerHTML = `
                     <div class="col-12">
                         <div class="alert alert-warning text-center">
-                            <h5>Не забудьте вставить CSV_URL!</h5>
-                            <p>Скопируйте <b>CSV-ссылку</b> из Google Sheets и вставьте в переменную <code>CSV_URL</code> в коде.</p>
+                            <h5>Не забудьте вставить CSV_URL</h5>
+                            <p>Скопируйте <b>CSV-ссылку</b> из Google Sheets и вставьте в переменную <code>CSV_URL</code>.</p>
                         </div>
                     </div>
                 `;
