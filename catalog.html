@@ -148,5 +148,25 @@
             }
         };
     </script>
+
+<!-- мини‑скрипт проверки CSV -->
+<div class="container mt-3">
+    <button id="testCsv" class="btn btn-info">Проверить CSV</button>
+    <pre id="log" class="mt-2"></pre>
+</div>
+
+<script>
+    document.getElementById('testCsv').addEventListener('click', async () => {
+        const log = document.getElementById('log');
+        try {
+            const res = await fetch(CSV_URL);
+            const text = await res.text();
+            log.textContent = `✓ Статус: ${res.status}\n\n${text.substring(0, 400)}...`;
+        } catch (e) {
+            log.textContent = `❌ Ошибка: ${e.message}\n\nURL: ${CSV_URL}`;
+        }
+    });
+</script>
+    
 </body>
 </html>
