@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Каталог б/у автозапчастей</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/lightbox2/2.11.4/css/lightbox.min.css" rel="stylesheet">
     <style>
         body { font-family: Arial, sans-serif; background: #f8f9fa; }
         .hero { 
@@ -19,17 +18,17 @@
         .price { font-size: 1.5rem; font-weight: bold; color: #28a745; }
         .spinner-border { width: 3rem; height: 3rem; }
         .cat-number { font-size: 0.9rem; color: #6c757d; }
-        .badge-photos { position: absolute; top: 10px; right: 10px; z-index: 2; }
         .hero h1 { margin-bottom: 0.5rem; }
         .hero p { opacity: 0.9; font-size: 1.1rem; }
     </style>
 </head>
 <body>
+
     <!-- Hero -->
     <section class="hero text-center">
         <div class="container">
-            <h1 class="display-4 fw-bold">Каталог товаров1</h1>
-            
+            <h1 class="display-4 fw-bold">Каталог запчастей</h1>
+            <p class="lead">Только строки со статусом 1 из Google Таблицы</p>
             <a href="index.html" class="btn btn-light me-3">Главная</a>
             <button class="btn btn-outline-light" onclick="loadProducts()">Обновить каталог</button>
         </div>
@@ -41,7 +40,7 @@
             <div class="row mb-3">
                 <div class="col-md-6">
                     <div class="input-group">
-                        <input type="text" id="search" class="form-control" placeholder="Поиск по названию/описанию...">
+                        <input type="text" id="search" class="form-control" placeholder="Поиск по названию...">
                         <button class="btn btn-outline-secondary" onclick="filterProducts()">Фильтр</button>
                     </div>
                 </div>
@@ -59,53 +58,31 @@
         </div>
     </section>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/lightbox2/2.11.4/js/lightbox.min.js"></script>
     <script>
-        // Вставьте вашу CSV-ссылку из Google Sheets (без лишних кавычек!)
+        // Вставь свою CSV-ссылку из Google Sheets (без лишних кавычек)
         const CSV_URL = https://docs.google.com/spreadsheets/d/e/2PACX-1vRqoUEksexahz9qmPIH4tnt7_pv0s0zuioF43jt9ftE264RW8MlRomCK8F-2GEz_w/pub?gid=549941518&single=true&output=csv;
 
         let allProducts = [];
 
-        // Парсинг CSV под вашу структуру:
-        // A=0 (нумерация), B=1 (статус), C=2 (наименование), D=3 (катал. номер),
-        // E=4 (цена), F=5 (фото, много строк через \n), G=6 (шаблон фото с *), H=7 (описание)
+        // Парсинг CSV под новую структуру:
+        // A=0 (номер строки), B=1 (статус), C=2 (название детали), D=3 (каталожный номер), E=4 (цена)
         function parseCSV(csvText) {
             const rows = csvText.split('\n')
                 .map(line => line
                     .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
                     .map(cell => cell.trim().replace(/^"|"$/g, '').replace(/""/g, '"'))
                 )
-                .filter(row => row.length >= 8 && row[0] && row[1] === '1'); // только B=1
+                // убираем пустые строки и строки без нужных столбцов
+                .filter(row => row.length >= 5 && row[0]);
 
-            return rows.map(row => {
-                const catalogNumber = row[3];      // D = каталожный номер
-                const price        = row[4];       // E = цена
-                const photosStr    = row[5];       // F = имена файлов, через \n
-                const photoTemplate = row[6];      // G = шаблон с *
-                const desc         = row[7];       // H = описание
-
-                // Если в шаблоне G есть *, заменяем его на номер D
-                const finalTemplate = photoTemplate ? photoTemplate.replace(/\*/g, catalogNumber) : 'photo_default.jpg';
-
-                // Формируем массив фото-имён, если есть много файлов через \n
-                const photoNames = photosStr
-                    ? photosStr.split('\n').map(name => name.trim()).filter(name => name)
-                    : [finalTemplate];
-
-                const photos = photoNames.map(photo => ({
-                    thumb: `https://disk.yandex.ru/i/${photo}?size=400x400`,
-                    orig:  `https://disk.yandex.ru/d/${photo}`
+            // оставляем только строки, где статус B=1
+            return rows
+                .filter(row => row[1] === '1')
+                .map(row => ({
+                    name       : row[2] || 'Без названия',   // C
+                    catNumber  : row[3] || '',                // D
+                    price      : row[4] || 'Договорная'      // E
                 }));
-
-                return {
-                    name:       row[2] || 'Без названия',
-                    catNumber:  catalogNumber || '',
-                    price:      price || 'Договорная',
-                    photos:     photos,
-                    desc:       desc || ''
-                };
-            });
         }
 
         async function loadProducts() {
@@ -114,7 +91,7 @@
             try {
                 const response = await fetch(CSV_URL);
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status} – проверьте ссылку и публикацию в Google Sheets`);
+                    throw new Error(`HTTP ${response.status} – проверьте ссылку`);
                 }
                 const csvText = await response.text();
 
@@ -146,43 +123,23 @@
                 : '<div class="col-12"><div class="alert alert-info text-center">Нет товаров со статусом 1</div></div>';
 
             products.forEach((product, idx) => {
-                const firstPhoto = product.photos[0];
                 const card = document.createElement('div');
                 card.className = 'col-md-6 col-lg-4';
                 card.innerHTML = `
-                    <div class="card h-100 shadow position-relative">
-                        <a href="${firstPhoto.orig}"
-                           data-lightbox="gallery-${idx}"
-                           data-title="${product.name}<br>№ ${product.catNumber}<br>${product.desc}">
-                            <img src="${firstPhoto.thumb}"
-                                 class="card-img-top"
-                                 alt="${product.name}"
-                                 loading="lazy"
-                                 style="height:200px; object-fit:cover;">
-                        </a>
-                        ${product.photos.length > 1
-                            ? `<span class="badge badge-photos bg-primary">${product.photos.length} фото</span>`
-                            : ''
-                        }
+                    <div class="card h-100 shadow">
+                        <!-- Пустой блок вместо фото -->
+                        <div class="card-header text-center bg-light text-muted">
+                            Нет фото
+                        </div>
                         <div class="card-body d-flex flex-column">
                             <h6 class="card-title mb-0">${product.name}</h6>
                             <small class="cat-number mb-1">Кат. № ${product.catNumber}</small>
                             <div class="price mt-auto mb-2">${product.price} ₽</div>
-                            <p class="card-text small flex-grow-1">${product.desc}</p>
                             <a href="tel:+79001234567" class="btn btn-success btn-sm mt-auto">Заказать</a>
                         </div>
                     </div>
                 `;
                 grid.appendChild(card);
-
-                // Если есть доп. фото, добавляем их в lightbox (скрытые ссылки)
-                product.photos.slice(1).forEach(photo => {
-                    const hiddenLink = document.createElement('a');
-                    hiddenLink.href = photo.orig;
-                    hiddenLink.setAttribute('data-lightbox', `gallery-${idx}`);
-                    hiddenLink.style.display = 'none';
-                    document.body.appendChild(hiddenLink);
-                });
             });
         }
 
@@ -196,16 +153,15 @@
 
             const filtered = allProducts.filter(p => {
                 const name = (p.name || '').toLowerCase();
-                const desc = (p.desc || '').toLowerCase();
-                const num  = p.catNumber || '';
-                return name.includes(query) || desc.includes(query) || num.includes(query);
+                const num  = (p.catNumber || '').toLowerCase();
+                return name.includes(query) || num.includes(query);
             });
 
             renderProducts(filtered);
             document.getElementById('count').textContent = filtered.length;
         }
 
-        // Инициализация при загрузке страницы
+        // Инициализация
         document.addEventListener('DOMContentLoaded', () => {
             const input = document.getElementById('search');
             input.addEventListener('keyup', e => {
@@ -216,8 +172,8 @@
                 document.getElementById('products-grid').innerHTML = `
                     <div class="col-12">
                         <div class="alert alert-warning text-center">
-                            <h5>Не забудьте вставить CSV_URL!</h5>
-                            <p>Скопируйте <b>CSV-ссылку</b> из Google Sheets и вставьте в переменную <code>CSV_URL</code> в коде.</p>
+                            <h5>Не забудьте вставить CSV_URL</h5>
+                            <p>Скопируйте ссылку на CSV‑экспорт из Google Sheets и вставьте в переменную <code>CSV_URL</code>.</p>
                         </div>
                     </div>
                 `;
